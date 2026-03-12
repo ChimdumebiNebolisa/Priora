@@ -4,11 +4,25 @@ Prior authorization command center for brain MRI cases.
 
 ## Setup
 
-(Placeholder — setup instructions will be added as the project is built.)
+1. Clone the repo.
+2. Backend: `cd backend`, create a virtualenv, run `pip install -r requirements.txt`, set `GEMINI_API_KEY` in `.env` (copy from `.env.example`).
+3. Frontend: `cd frontend`, run `npm install`.
 
 ## Running locally
 
-(Placeholder — local run steps will be added.)
+**Backend**
+
+From the repo root:
+```bash
+cd backend
+uvicorn main:app --reload
+```
+Server runs at http://127.0.0.1:8000.
+
+**Verify endpoints**
+
+- `GET http://127.0.0.1:8000/health` — returns `{"status": "ok"}`.
+- `GET http://127.0.0.1:8000/case` — returns full synthetic case JSON (patient, procedure, auth_episode, payer_requirements, blockers, next_action, ai_summary, timeline, risk_signal, stages).
 
 ## Deployment
 
