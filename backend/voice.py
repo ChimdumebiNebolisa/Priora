@@ -40,6 +40,10 @@ async def run_voice_proxy(websocket):
     if not api_key or not api_key.strip():
         logger.error("GEMINI_API_KEY not set; closing voice WebSocket")
         try:
+            await websocket.send_text(json.dumps({"error": "GEMINI_API_KEY not set"}))
+        except Exception:
+            pass
+        try:
             await websocket.close(code=1011)
         except Exception:
             pass

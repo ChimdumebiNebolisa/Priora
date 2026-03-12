@@ -1,8 +1,37 @@
 import { useState, useRef, useCallback } from 'react'
 
+// Backend/Gemini contract: input must be 16 kHz 16-bit PCM.
 const SAMPLE_RATE_IN = 16000
+// Gemini Live API output is 24 kHz 16-bit PCM; backend forwards as-is. Isolate here for easy adjustment.
 const SAMPLE_RATE_OUT = 24000
 const BUFFER_SIZE = 4096
+
+/** Resample float32 samples to 16 kHz 16-bit PCM for backend/Gemini contract. */
+function resampleTo16k(float32Samples, sourceSampleRate) {
+  if (float32Samples.length === 0) return new Int16Array(0)
+  if (sourceSampleRate === SAMPLE_RATE_IN) {
+    const pcm = new Int16Array(float32Samples.length)
+    for (let i = 0; i < float32Samples.length; i++) {
+      const s = Math.max(-1, Math.min(1, float32Samples[i]))
+      pcm[i] = s < 0 ? s * 0x8000 : s * 0x7fff
+    }
+    return pcm
+  }
+  const outLength = Math.max(1, Math.round((float32Samples.length * SAMPLE_RATE_IN) / sourceSampleRate))
+  const pcm = new Int16Array(outLength)
+  const lastIn = float32Samples.length - 1
+  const lastOut = outLength - 1
+  for (let i = 0; i < outLength; i++) {
+    const srcIdx = lastOut > 0 ? (i * lastIn) / lastOut : 0
+    const idx0 = Math.floor(srcIdx)
+    const idx1 = Math.min(idx0 + 1, float32Samples.length - 1)
+    const t = srcIdx - idx0
+    const s = float32Samples[idx0] * (1 - t) + float32Samples[idx1] * t
+    const clamped = Math.max(-1, Math.min(1, s))
+    pcm[i] = clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff
+  }
+  return pcm
+}
 
 function VoiceButton() {
   const [status, setStatus] = useState('idle') // idle | connecting | listening | speaking
@@ -99,25 +128,21 @@ function VoiceButton() {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
         streamRef.current = stream
 
-        const context = new (window.AudioContext || window.webkitAudioContext)({
-          sampleRate: SAMPLE_RATE_IN,
-        })
+        const context = new (window.AudioContext || window.webkitAudioContext)()
         audioContextRef.current = context
 
         const source = context.createMediaStreamSource(stream)
         sourceRef.current = source
 
+        // ScriptProcessorNode is deprecated but avoids AudioWorklet + separate file for this MVP.
         const processor = context.createScriptProcessor(BUFFER_SIZE, 1, 1)
         processorRef.current = processor
 
         processor.onaudioprocess = (e) => {
           if (wsRef.current?.readyState !== WebSocket.OPEN) return
           const input = e.inputBuffer.getChannelData(0)
-          const pcm = new Int16Array(input.length)
-          for (let i = 0; i < input.length; i++) {
-            const s = Math.max(-1, Math.min(1, input[i]))
-            pcm[i] = s < 0 ? s * 0x8000 : s * 0x7fff
-          }
+          const actualRate = e.inputBuffer.sampleRate
+          const pcm = resampleTo16k(input, actualRate)
           wsRef.current.send(pcm.buffer)
         }
 
@@ -131,6 +156,18 @@ function VoiceButton() {
     }
 
     ws.onmessage = (event) => {
+      if (typeof event.data === 'string') {
+        try {
+          const data = JSON.parse(event.data)
+          if (data.error) {
+            setError(data.error)
+            closeWs()
+            stopCapture()
+            setStatus('idle')
+          }
+        } catch (_) {}
+        return
+      }
       if (event.data instanceof ArrayBuffer && event.data.byteLength > 0) {
         setStatus('speaking')
         const int16 = new Int16Array(event.data)
@@ -150,7 +187,14 @@ function VoiceButton() {
       setError('WebSocket error')
     }
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
+      if (!event.wasClean) {
+        if (event.code === 1011) {
+          setError((e) => e || 'Voice service unavailable')
+        } else if (event.code !== 1000) {
+          setError((e) => e || 'Connection closed')
+        }
+      }
       closeWs()
       stopCapture()
       setStatus('idle')
