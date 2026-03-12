@@ -33,6 +33,10 @@ npm run dev
 ```
 Dev server runs at http://localhost:5173. Open in browser to see the app.
 
+**Voice agent**
+
+The mic button opens a WebSocket to `/voice` and streams 16 kHz PCM from the browser to the backend; the backend proxies audio to the Gemini Live API and streams response audio back. Interruption (speaking over the agent) is handled by the Live API. Full verification (interruption behavior and case-grounded answers to e.g. “What is the status of Maria’s case?”, “What is blocking submission?”, “What do I need to do next?”) is **blocked on `GEMINI_API_KEY`** being set; once the key is available, run backend and frontend and test with the mic to confirm.
+
 ## Deployment
 
 (Placeholder — deployment steps will be added.)
