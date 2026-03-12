@@ -5,5 +5,10 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173,
+    proxy: {
+      '/case': 'http://localhost:8000',
+      '/health': 'http://localhost:8000',
+      '/voice': 'ws://localhost:8000',
+    },
   },
 })
